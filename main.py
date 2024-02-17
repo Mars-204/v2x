@@ -2,7 +2,8 @@ import pygame
 import math
 import random
 import can
-
+import threading
+import time
 
 # initialize pygame
 pygame.init()
@@ -28,8 +29,17 @@ RED = (255, 0, 0)
 MESSAGE_ID_1 = 0x100
 MESSAGE_ID_2 = 0x200
 
-# Create virtual CAN bus
-bus = can.interface.Bus(channel='virtual', bustype='virtual')
+try:
+    # Create virtual CAN bus
+    bus_send = can.interface.Bus('test', bustype='virtual')
+    bus_recv = can.interface.Bus('test', bustype='virtual')
+    print("Virtual CAN bus initialized successfully.")
+except Exception as e:
+    print("Error initializing virtual CAN bus:", e)
+
+
+# Load a font
+font = pygame.font.Font(None, 24)  # None means default font, 24 is the size
 
 # Define a class for virtual vehicles
 class Vehicle:
@@ -40,6 +50,8 @@ class Vehicle:
         self.direction = direction
         self.color = color
         self.node = node_id
+        self.sent_messages = []
+        self.received_messages = []
 
     def move(self):
         self.x += self.speed * math.cos(self.direction)
@@ -58,35 +70,73 @@ class Vehicle:
     def draw(self):
         pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), VEHICLE_RADIUS)
 
-    def send_message(self, message_id, data):
-        msg = can.Message(arbitration_id=message_id, data=data, is_extended_id=False)
-        bus.send(msg)
-        print(f"Vehicle {self.node}: Sent message - ID: {message_id}, Data: {data}")
+        # Display sent messages
+        for i, (message_id, data) in enumerate(self.sent_messages):
+            message_text = f"Sent: ID={message_id}, Data={data}"
+            text_surface = font.render(message_text, True, self.color)
+            screen.blit(text_surface, (10, 10 + i * 20))
 
-    def receive_message(self):
-        msg = bus.recv(timeout=1)
+        # Display received messages
+        for i, (message_id, data) in enumerate(self.received_messages):
+            message_text = f"Received: ID={message_id}, Data={data}"
+            text_surface = font.render(message_text, True, self.color)
+            screen.blit(text_surface, (10, 100 + i * 20))
+
+
+    def send_messages(self, message_id, data):
+        msg = can.Message(arbitration_id=message_id, data=data)
+        bus_send.send(msg)
+        # print(f"Vehicle {self.node}: Sent message - ID: {message_id}, Data: {data}")
+
+        # Keep track of sent message
+        self.sent_messages.append((message_id, data))
+
+    def receive_messages(self):
+        while True:
+            msg = bus_recv.recv()
+            if msg is not None:
+                print(f"Vehicle {self.node}: Received message - ID: {msg.arbitration_id}, Data: {msg.data}")
+                
+                # Keep track of received message
+                self.received_messages.append((msg.arbitration_id, msg.data))
+            time.sleep(5)
+
+vehicles = [
+    Vehicle(random.randint(0,SCREEN_WIDTH),random.randint(0, SCREEN_HEIGHT), color = RED, direction=0, node_id = 1),
+    Vehicle(random.randint(0,SCREEN_WIDTH),random.randint(0, SCREEN_HEIGHT), color = BLACK, direction=math.pi/2, node_id = 2)]
+
+def receive_messages(vehicle):
+    while True:
+        msg = bus_recv.recv()
         if msg is not None:
-            print(f"Vehicle {self.node}: Received message - ID: {msg.arbitration_id}, Data: {msg.data}")
+            print(f"Vehicle {vehicle.node}: Received message - ID: {msg.arbitration_id}, Data: {msg.data}")
+            
+        time.sleep(1)
 
 
-class Communication:
-    def __init__(self) -> None:
-        pass
-        
-    def broadcast_message(self, message):
-        for vehicle in vehicles:
-            if vehicle != self and math.sqrt((self.x - vehicle.x)**2 + (self.y - vehicle.y)**2) <= COMMUNICATION_RANGE:
-                vehicle.receive_message(message)
+def send_messages(vehicle):
+    while True:
+        # Define your message IDs and data here
+        message_id = vehicle.node * 0x100  # Example: Each vehicle sends messages with its own node ID as the base ID
+        data = [0x01, 0x02, 0x03]  # Example data
 
-    def receive_message(self, message):
-        self.messages.append(message)
+        # Create CAN message and send it
+        msg = can.Message(arbitration_id=message_id, data=data)
+        bus_send.send(msg)
 
-# Create virtual vehicles
-# vehicles = [Vehicle(random.randint(0, SCREEN_WIDTH), random.randint(0, SCREEN_HEIGHT)) for _ in range(NUM_VEHICLES)]
-vehicle1 = Vehicle(random.randint(0,SCREEN_WIDTH),random.randint(0, SCREEN_HEIGHT), color = RED, direction=0, node_id = 1)
-vehicle2 = Vehicle(random.randint(0,SCREEN_WIDTH),random.randint(0, SCREEN_HEIGHT), color = BLACK, direction=math.pi/2, node_id = 2)
+        print(f"Vehicle {vehicle.node}: Sent message - ID: {message_id}, Data: {data}")
 
-vehicles = [vehicle1, vehicle2]
+        # Adjust the sleep interval as needed
+        time.sleep(1)
+
+
+# Start a separate thread for message reception for each vehicle
+for vehicle in vehicles:
+    threading.Thread(target=receive_messages, args=(vehicle,), daemon=True).start()
+
+# Start a separate thread for sending messages for each vehicle
+for vehicle in vehicles:
+    threading.Thread(target=send_messages, args=(vehicle,), daemon=True).start()
 
 
 
@@ -105,13 +155,7 @@ while running:
     for vehicle in vehicles:
         vehicle.move()
         vehicle.draw()
-
-    # Simulate message exchange between vehicles
-    vehicle1.send_message(MESSAGE_ID_1, [0x01, 0x02, 0x03])
-    vehicle2.send_message(MESSAGE_ID_2, [0x04, 0x05, 0x06])
     
-    vehicle1.receive_message()
-    vehicle2.receive_message()
     # Update the display
     pygame.display.flip()
 
@@ -120,4 +164,5 @@ while running:
 
 # Quit Pygame
 pygame.quit()
-bus.shutdown()
+bus_send.shutdown()
+bus_recv.shutdown()
