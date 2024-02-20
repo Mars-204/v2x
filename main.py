@@ -4,6 +4,7 @@ import random
 import can
 import threading
 import time
+import socket
 
 # initialize pygame
 pygame.init()
@@ -83,60 +84,84 @@ class Vehicle:
             screen.blit(text_surface, (10, 100 + i * 20))
 
 
-    def send_messages(self, message_id, data):
-        msg = can.Message(arbitration_id=message_id, data=data)
-        bus_send.send(msg)
-        # print(f"Vehicle {self.node}: Sent message - ID: {message_id}, Data: {data}")
+    # def send_messages(self, message_id, data):
+    #     msg = can.Message(arbitration_id=message_id, data=data)
+    #     bus_send.send(msg)
+    #     
+    #     # print(f"Vehicle {self.node}: Sent message - ID: {message_id}, Data: {data}")
 
-        # Keep track of sent message
-        self.sent_messages.append((message_id, data))
+    #     # Keep track of sent message
+    #     self.sent_messages.append((message_id, data))
 
-    def receive_messages(self):
-        while True:
-            msg = bus_recv.recv()
-            if msg is not None:
-                print(f"Vehicle {self.node}: Received message - ID: {msg.arbitration_id}, Data: {msg.data}")
+    # def receive_messages(self):
+    #     while True:
+    #         msg = bus_recv.recv()
+    #         if msg is not None:
+    #             print(f"Vehicle {self.node}: Received message - ID: {msg.arbitration_id}, Data: {msg.data}")
                 
-                # Keep track of received message
-                self.received_messages.append((msg.arbitration_id, msg.data))
-            time.sleep(5)
+    #             # Keep track of received message
+    #             self.received_messages.append((msg.arbitration_id, msg.data))
+    #         time.sleep(5)
+    
+
+    def connect_to_server(self):
+        # Connect to the server
+        server_host = "127.0.0.1"  # Change this to the IP address of your server
+        server_port = 8888
+
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect((server_host, server_port))
+        return client_socket
+
+
+
 
 vehicles = [
     Vehicle(random.randint(0,SCREEN_WIDTH),random.randint(0, SCREEN_HEIGHT), color = RED, direction=0, node_id = 1),
     Vehicle(random.randint(0,SCREEN_WIDTH),random.randint(0, SCREEN_HEIGHT), color = BLACK, direction=math.pi/2, node_id = 2)]
 
-def receive_messages(vehicle):
+def receive_messages(vehicle, vehicle_socket):
     while True:
         msg = bus_recv.recv()
         if msg is not None:
             print(f"Vehicle {vehicle.node}: Received message - ID: {msg.arbitration_id}, Data: {msg.data}")
-            
+            response = vehicle_socket.recv(1024)
+            print("Server response:", response.decode())
         time.sleep(1)
 
-
-def send_messages(vehicle):
+def send_messages(vehicle, vehicle_socket):
     while True:
         # Define your message IDs and data here
-        message_id = vehicle.node * 0x100  # Example: Each vehicle sends messages with its own node ID as the base ID
-        data = [0x01, 0x02, 0x03]  # Example data
+        message_id = vehicle.node * 0x100
+        data = bytearray([0x01, 0x02, 0x03])  # Example data as bytes
 
         # Create CAN message and send it
         msg = can.Message(arbitration_id=message_id, data=data)
         bus_send.send(msg)
+
+        # Send data over the socket
+        vehicle_socket.send(data)
 
         print(f"Vehicle {vehicle.node}: Sent message - ID: {message_id}, Data: {data}")
 
         # Adjust the sleep interval as needed
         time.sleep(1)
 
+# Main loop
+running = True
+sockets = []
 
-# Start a separate thread for message reception for each vehicle
 for vehicle in vehicles:
-    threading.Thread(target=receive_messages, args=(vehicle,), daemon=True).start()
+    # Establish socket connection for each vehicle
+    vehicle_socket = vehicle.connect_to_server()
+    sockets.append(vehicle_socket)
 
-# Start a separate thread for sending messages for each vehicle
-for vehicle in vehicles:
-    threading.Thread(target=send_messages, args=(vehicle,), daemon=True).start()
+    # Start a separate thread for message reception for each vehicle
+    threading.Thread(target=receive_messages, args=(vehicle, vehicle_socket), daemon=True).start()
+
+    # Start a separate thread for sending messages for each vehicle
+    threading.Thread(target=send_messages, args=(vehicle, vehicle_socket), daemon=True).start()
+
 
 
 
