@@ -6,3 +6,5 @@ The vehicles are displayed using pygame. The virtual CAN communication is being 
 # Working
 
 A central local server is set up to monitor the vehicles. All the vehicles will send and recieve data to server and other vehicles.
+
+![plot](./Picture1.png)
