@@ -5,6 +5,8 @@ import can
 import threading
 import time
 import socket
+from server import start_server
+from generate_vehicle_data import generate_data, decode_can_frame
 
 # initialize pygame
 pygame.init()
@@ -82,26 +84,6 @@ class Vehicle:
             message_text = f"Received: ID={message_id}, Data={data}"
             text_surface = font.render(message_text, True, self.color)
             screen.blit(text_surface, (10, 100 + i * 20))
-
-
-    # def send_messages(self, message_id, data):
-    #     msg = can.Message(arbitration_id=message_id, data=data)
-    #     bus_send.send(msg)
-    #     
-    #     # print(f"Vehicle {self.node}: Sent message - ID: {message_id}, Data: {data}")
-
-    #     # Keep track of sent message
-    #     self.sent_messages.append((message_id, data))
-
-    # def receive_messages(self):
-    #     while True:
-    #         msg = bus_recv.recv()
-    #         if msg is not None:
-    #             print(f"Vehicle {self.node}: Received message - ID: {msg.arbitration_id}, Data: {msg.data}")
-                
-    #             # Keep track of received message
-    #             self.received_messages.append((msg.arbitration_id, msg.data))
-    #         time.sleep(5)
     
 
     def connect_to_server(self):
@@ -126,15 +108,15 @@ def receive_messages(vehicle, vehicle_socket):
         if msg is not None:
             print(f"Vehicle {vehicle.node}: Received message - ID: {msg.arbitration_id}, Data: {msg.data}")
             response = vehicle_socket.recv(1024)
-            print("Server response:", response.decode())
+            print("Server response:", decode_can_frame(response))
         time.sleep(1)
 
 def send_messages(vehicle, vehicle_socket):
     while True:
         # Define your message IDs and data here
         message_id = vehicle.node * 0x100
-        data = bytearray([0x01, 0x02, 0x03])  # Example data as bytes
-
+        # data = bytearray([0x01, 0x02, 0x03])  # Example data as bytes
+        data = generate_data()
         # Create CAN message and send it
         msg = can.Message(arbitration_id=message_id, data=data)
         bus_send.send(msg)
@@ -148,13 +130,16 @@ def send_messages(vehicle, vehicle_socket):
         time.sleep(1)
 
 # Main loop
-running = True
 sockets = []
+
+# Start a separate thread to start the server
+threading.Thread(target=start_server).start()
 
 for vehicle in vehicles:
     # Establish socket connection for each vehicle
     vehicle_socket = vehicle.connect_to_server()
     sockets.append(vehicle_socket)
+
 
     # Start a separate thread for message reception for each vehicle
     threading.Thread(target=receive_messages, args=(vehicle, vehicle_socket), daemon=True).start()

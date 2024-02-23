@@ -12,7 +12,7 @@ def handle_client(client_socket, address):
             break
         
         # Process received data (e.g., parse CAN messages)
-        print(f"Received data from {address}: {data.decode()}")
+        print(f"Received data from {address}: {data.hex()}")
 
         # Example: Echo back the received data
         client_socket.send(data)
@@ -35,5 +35,3 @@ def start_server():
         client_socket, address = server_socket.accept()
         client_handler = threading.Thread(target=handle_client, args=(client_socket, address))
         client_handler.start()
-
-start_server()
